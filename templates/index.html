@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All groups CPI & Trimmed Mean - Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #191919;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #202020;
+            border: 1px solid #2f2f2f;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+        }
+        .controls button {
+            background-color: #2a2a2a;
+            color: #ffffff;
+            border: 1px solid #3f3f3f;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .controls button.active {
+            background-color: #00e5ff;
+            color: #191919;
+            border-color: #00e5ff;
+        }
+        .controls button:hover {
+            opacity: 0.85;
+        }
+        .chart-container {
+            position: relative;
+            height: 600px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="controls">
+            <button id="btnBar" class="active" onclick="switchView('bar')">Bar Chart View</button>
+            <button id="btnLine" onclick="switchView('line')">Line Chart View</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="trimmedChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let chartInstance = null;
+        let globalData = null;
+
+        fetch('/api/trimmed-data')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error(data.error);
+                    return;
+                }
+                globalData = data;
+                renderChart('bar');
+            })
+            .catch(err => console.error('Error loading chart data:', err));
+
+        function switchView(type) {
+            document.getElementById('btnBar').classList.toggle('active', type === 'bar');
+            document.getElementById('btnLine').classList.toggle('active', type === 'line');
+            renderChart(type);
+        }
+
+        function renderChart(type) {
+            const ctx = document.getElementById('trimmedChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            let datasets = [];
+
+            if (type === 'bar') {
+                datasets = [
+                    {
+                        type: 'bar',
+                        label: 'All groups CPI',
+                        data: globalData.cpi,
+                        backgroundColor: '#00e5ff',
+                        borderColor: '#00e5ff',
+                        borderWidth: 1,
+                        barPercentage: 0.8,
+                        categoryPercentage: 0.9
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Trimmed mean',
+                        data: globalData.trimmed,
+                        backgroundColor: '#ff6d00',
+                        borderColor: '#ff6d00',
+                        borderWidth: 1,
+                        barPercentage: 0.8,
+                        categoryPercentage: 0.9
+                    }
+                ];
+            } else {
+                datasets = [
+                    {
+                        type: 'line',
+                        label: 'All groups CPI',
+                        data: globalData.cpi,
+                        borderColor: '#00e5ff',
+                        backgroundColor: '#00e5ff',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        tension: 0.1
+                    },
+                    {
+                        type: 'line',
+                        label: 'Trimmed mean',
+                        data: globalData.trimmed,
+                        borderColor: '#ff9100',
+                        backgroundColor: '#ff9100',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        tension: 0.1
+                    }
+                ];
+            }
+
+            // Calculate dynamic maximum value for Y-axis to remove top blank space
+            const allValues = [...globalData.cpi, ...globalData.trimmed];
+            const maxDataVal = Math.max(...allValues);
+            const suggestedMax = Math.ceil(maxDataVal + 1);
+
+            // Custom plugin to draw values on top of bars
+            const valueLabelsPlugin = {
+                id: 'valueLabelsPlugin',
+                afterDatasetsDraw(chart) {
+                    if (chart.config.type !== 'bar') return;
+                    const { ctx } = chart;
+                    ctx.save();
+                    ctx.font = '11px sans-serif';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+
+                    chart.data.datasets.forEach((dataset, datasetIndex) => {
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        meta.data.forEach((bar, index) => {
+                            const value = dataset.data[index];
+                            const x = bar.x;
+                            const y = bar.y - 4; // Position just above the bar
+                            ctx.fillText(value, x, y);
+                        });
+                    });
+                    ctx.restore();
+                }
+            };
+
+            chartInstance = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: globalData.labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9b9b9b' },
+                            min: 0,
+                            max: suggestedMax
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                color: '#9b9b9b',
+                                maxRotation: 0
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { 
+                                color: '#d4d4d4', 
+                                font: { size: 14 },
+                                usePointStyle: true,
+                                pointStyle: 'rectRounded'
+                            }
+                        }
+                    }
+                },
+                plugins: [valueLabelsPlugin]
+            });
+        }
+    </script>
+</body>
+</html>
